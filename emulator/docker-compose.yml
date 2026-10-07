@@ -1,0 +1,38 @@
+# Local Azure Service Bus emulator for the ServiceBus tests.
+# Settings come from emulator/.env (copy .env.example and fill it in).
+name: playwright-asb-csharp-sb
+
+services:
+  emulator:
+    container_name: asb-csharp-servicebus-emulator
+    image: mcr.microsoft.com/azure-messaging/servicebus-emulator:latest
+    volumes:
+      - ./Config.json:/ServiceBus_Emulator/ConfigFiles/Config.json
+    ports:
+      - "5672:5672"   # AMQP, used by the tests
+      - "5300:5300"   # management + health
+    environment:
+      SQL_SERVER: sqledge
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?Set MSSQL_SA_PASSWORD in emulator/.env}
+      ACCEPT_EULA: ${ACCEPT_EULA:?Set ACCEPT_EULA=Y in emulator/.env to accept the licenses}
+      SQL_WAIT_INTERVAL: "15"
+    depends_on:
+      - sqledge
+    networks:
+      sb-emulator:
+        aliases:
+          - "sb-emulator"
+
+  sqledge:
+    container_name: asb-csharp-sqledge
+    image: mcr.microsoft.com/azure-sql-edge:latest
+    environment:
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+      ACCEPT_EULA: ${ACCEPT_EULA}
+    networks:
+      sb-emulator:
+        aliases:
+          - "sqledge"
+
+networks:
+  sb-emulator:

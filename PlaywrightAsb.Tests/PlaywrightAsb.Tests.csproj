@@ -8,6 +8,7 @@
     <IsPackable>false</IsPackable>
     <!-- HTML report per run: TestResults\TestResults-yyyyMMdd-HHmmss.html -->
     <VSTestLogger>html%3BLogFileName=TestResults-$([System.DateTime]::Now.ToString('yyyyMMdd-HHmmss')).html</VSTestLogger>
+    <RunSettingsFilePath>$(MSBuildProjectDirectory)\.runsettings</RunSettingsFilePath>
   </PropertyGroup>
 
   <ItemGroup>

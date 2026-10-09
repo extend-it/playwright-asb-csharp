@@ -1,0 +1,85 @@
+{
+  "UserConfig": {
+    "Namespaces": [
+      {
+        "Name": "sbemulatorns",
+        "Queues": [
+          {
+            "Name": "incident-actions",
+            "Properties": {
+              "DeadLetteringOnMessageExpiration": true,
+              "DefaultMessageTimeToLive": "PT10M",
+              "LockDuration": "PT10S",
+              "MaxDeliveryCount": 2,
+              "RequiresDuplicateDetection": true,
+              "DuplicateDetectionHistoryTimeWindow": "PT2M",
+              "RequiresSession": false
+            }
+          }
+        ],
+        "Topics": [
+          {
+            "Name": "security-alerts",
+            "Properties": {
+              "DefaultMessageTimeToLive": "PT10M",
+              "RequiresDuplicateDetection": false
+            },
+            "Subscriptions": [
+              {
+                "Name": "alerts-critical",
+                "Properties": {
+                  "DeadLetteringOnMessageExpiration": true,
+                  "DefaultMessageTimeToLive": "PT10M",
+                  "LockDuration": "PT10S",
+                  "MaxDeliveryCount": 5,
+                  "ForwardDeadLetteredMessagesTo": "",
+                  "ForwardTo": "",
+                  "RequiresSession": false
+                },
+                "Rules": [
+                  {
+                    "Name": "critical-only",
+                    "Properties": {
+                      "FilterType": "Sql",
+                      "SqlFilter": { "SqlExpression": "severity = 'critical'" }
+                    }
+                  }
+                ]
+              },
+              {
+                "Name": "alerts-informational",
+                "Properties": {
+                  "DeadLetteringOnMessageExpiration": true,
+                  "DefaultMessageTimeToLive": "PT10M",
+                  "LockDuration": "PT10S",
+                  "MaxDeliveryCount": 5,
+                  "RequiresSession": false
+                },
+                "Rules": [
+                  {
+                    "Name": "informational-only",
+                    "Properties": {
+                      "FilterType": "Sql",
+                      "SqlFilter": { "SqlExpression": "severity = 'informational'" }
+                    }
+                  }
+                ]
+              },
+              {
+                "Name": "alerts-audit",
+                "Properties": {
+                  "DeadLetteringOnMessageExpiration": true,
+                  "DefaultMessageTimeToLive": "PT10M",
+                  "LockDuration": "PT5S",
+                  "MaxDeliveryCount": 2,
+                  "RequiresSession": false
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "Logging": { "Type": "File" }
+  }
+}

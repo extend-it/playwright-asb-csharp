@@ -28,8 +28,8 @@ public abstract class ServiceBusTestBase
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
-            Assert.Fail("Service Bus emulator is not running. Start it: " +
-                        "docker compose -f C:\\Auto\\playwright-asb\\docker\\docker-compose.yaml up -d");
+            Assert.Fail("Service Bus emulator is not running. From the repo root: " +
+                        "docker compose -f docker/docker-compose.yaml up -d");
         }
     }
 

@@ -16,6 +16,23 @@ public abstract class ServiceBusTestBase
         ?? Environment.GetEnvironmentVariable(name)
         ?? fallback;
 
+    /// <summary>Fail fast with a clear message when the emulator isn't reachable, instead of a 30-second AMQP timeout.</summary>
+    private static async Task EnsureEmulatorIsUpAsync()
+    {
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+        try
+        {
+            var response = await http.GetAsync("http://localhost:5300/health");
+            if (!response.IsSuccessStatusCode)
+                Assert.Fail($"Service Bus emulator answered {(int)response.StatusCode}. Is it still starting?");
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            Assert.Fail("Service Bus emulator is not running. Start it: " +
+                        "docker compose -f C:\\Auto\\playwright-asb\\docker\\docker-compose.yaml up -d");
+        }
+    }
+
     [OneTimeSetUp]
     // public void CreateClient()
     // {
@@ -23,10 +40,14 @@ public abstract class ServiceBusTestBase
     //              ?? throw new InvalidOperationException("SERVICEBUS_CONNECTION_STRING is not set");
     //     Client = new ServiceBusClient(cs);
     // }
-    public void CreateClient() =>
+    public async Task CreateClient()
+    {
+        
+        await EnsureEmulatorIsUpAsync();
         Client = new ServiceBusClient(Setting(
             "SERVICEBUS_CONNECTION_STRING",
             "Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;"));
+    }
 
     [OneTimeTearDown]
     public async Task DisposeClient() => await Client.DisposeAsync();
@@ -54,6 +75,28 @@ public abstract class ServiceBusTestBase
             if (found.Count > 0 && batch.Count == 0) break;
         }
         return found;
+    }
+
+    /// <summary>Receive until our message arrives and return it still locked; complete everything else.</summary>
+    protected static async Task<ServiceBusReceivedMessage?> ReceiveOwnAsync(
+        ServiceBusReceiver receiver, string correlationId, TimeSpan? budget = null)
+    {
+        var limit = budget ?? TimeSpan.FromSeconds(10);
+        var clock = Stopwatch.StartNew();
+
+        while (clock.Elapsed < limit)
+        {
+            ServiceBusReceivedMessage? mine = null;
+            foreach (var message in await receiver.ReceiveMessagesAsync(10, TimeSpan.FromSeconds(1)))
+            {
+                if (mine is null && message.CorrelationId == correlationId)
+                    mine = message;
+                else
+                    await receiver.CompleteMessageAsync(message);
+            }
+            if (mine is not null) return mine;
+        }
+        return null;
     }
 
     /// <summary>Empty a subscription so a test starts from a known state.</summary>

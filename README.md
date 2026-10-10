@@ -50,17 +50,20 @@ dotnet test PlaywrightAsb.Tests
 
 ### Service Bus tests
 
-By default the Service Bus tests connect to the local [Azure Service Bus emulator](https://learn.microsoft.com/azure/service-bus-messaging/overview-emulator) on `localhost:5672`. To run the emulator, start Docker Desktop, then:
+By default the Service Bus tests connect to the local [Azure Service Bus emulator](https://learn.microsoft.com/azure/service-bus-messaging/overview-emulator) on `localhost:5672`. The emulator's compose file lives in this repo under `docker/`. Start Docker Desktop, then from the repository root start the emulator and check that it's up:
 
 ```powershell
-cd emulator
-copy .env.example .env   # then set ACCEPT_EULA=Y and a MSSQL_SA_PASSWORD
-docker compose up -d
+docker compose -f docker/docker-compose.yaml up -d
+curl.exe http://localhost:5300/health
 ```
 
-`emulator\Config.json` creates the `security-alerts` topic (subscriptions `alerts-critical`, `alerts-informational`, `alerts-audit`) and the `incident-actions` queue. Stop the emulator with `docker compose down`, and start it again later with `docker compose up -d` (from the `emulator` folder).
+The Service Bus fixtures call this health endpoint before connecting. If the emulator isn't running, they fail fast with a clear message that includes the start command, instead of waiting for an AMQP timeout.
+
+`docker\Config.json` creates the `security-alerts` topic (subscriptions `alerts-critical`, `alerts-informational`, `alerts-audit`) and the `incident-actions` queue. Stop the emulator with `docker compose -f docker/docker-compose.yaml down`.
 
 The emulator needs host ports 5672 and 5300, so stop any other Service Bus emulator first.
+
+`docker/docker-compose.yaml` uses the Compose project name `sb-emulator` and the fixed container names `servicebus-emulator` and `sqledge`. Docker allows only one container per name, so before starting it, remove any existing containers with those names that were created by another setup.
 
 #### Running against a real Service Bus namespace
 
@@ -75,7 +78,9 @@ The connection string, topic and queue are test parameters in `PlaywrightAsb.Tes
 
   Write every `;` in the connection string as `%3B`. `dotnet test` otherwise turns semicolons into spaces and rejects the parameter. In Windows PowerShell 5.1, write the inner quotes as `\"` instead of `"`.
 
-The namespace needs the same entities as the emulator: the `security-alerts` topic with its three filtered subscriptions, and the `incident-actions` queue (see `emulator\Config.json`).
+The namespace needs the same entities as the emulator: the `security-alerts` topic with its three filtered subscriptions, and the `incident-actions` queue (see `docker\Config.json`).
+
+Before connecting, the Service Bus fixtures always check the local emulator's health endpoint (`http://localhost:5300/health`), whatever connection string is configured. Against a real namespace they therefore fail unless a local emulator is also running.
 
 ### HTML report
 
@@ -86,6 +91,62 @@ Get-ChildItem PlaywrightAsb.Tests\TestResults\TestResults-*.html | Sort-Object N
 ```
 
 The report is configured by the `VSTestLogger` property in `PlaywrightAsb.Tests\PlaywrightAsb.Tests.csproj`. Passing your own `--logger` to `dotnet test` replaces it.
+
+## Test overview
+
+### UI: `ToDoMvcTests` (`UI/TodoMvcTests.cs`)
+
+Playwright browser tests against the TodoMVC demo app (`https://demo.playwright.dev/todomvc/`, override with `UI_BASE_URL`). The fixture inherits from `UiTestBase`, which keeps a Playwright trace for each failed test.
+
+| Test | What it checks |
+|---|---|
+| `AddedTodosAppearInOrderAndAreCounted` | Two added todos are listed in the order they were added, and the counter shows "2 items left" |
+| `CompletedTodoLeavesTheActiveFilter` | Completing a todo marks it completed and the counter shows "1 item left"; the Active filter then lists only the other todo, and the Completed filter only the completed one |
+
+### Service Bus: `RoutingTests` (`ServiceBus/`)
+
+Topic routing on `security-alerts`, based on the `severity` application property.
+
+| Test | What it checks |
+|---|---|
+| `CriticalAlertReachesCriticalAndAuditOnly` | A critical alert reaches `alerts-critical` and `alerts-audit` but not `alerts-informational`, with its body and `severity` property intact |
+| `InformationalAlertDoesNotReachCritical` | An informational alert reaches `alerts-informational` but not `alerts-critical` |
+
+### Service Bus: `DeadLetterTests` (`ServiceBus/`)
+
+Dead-lettering on the `alerts-audit` subscription.
+
+| Test | What it checks |
+|---|---|
+| `AlertThatFailedValidationLandsInDlqWithReason` | A consumer dead-letters an alert that has no `DeviceId`; the dead-letter queue holds exactly one copy, with reason `SchemaValidationFailed`, a description mentioning `deviceId`, and the original body |
+| `PoisonAlertAbandonedMaxDeliveryCountIsDeadLetteredByTheBroker` | An alert abandoned on every delivery is delivered twice (delivery counts 1 and 2); the broker then dead-letters it with reason `MaxDeliveryCountExceeded` |
+
+### Service Bus: `IdempotencyTests` (`ServiceBus/`)
+
+Duplicate detection and idempotent handling on the `incident-actions` queue.
+
+| Test | What it checks |
+|---|---|
+| `BrokerDropsASecondSendWithTheSameMessageId` | Two sends with the same `MessageId` (a publisher retry) arrive only once |
+| `BrokerAcceptsResendsWithADifferentMessageId` (control) | The same body sent with two different `MessageId`s arrives twice, because deduplication is keyed on `MessageId`, not on the body |
+| `IdempotentHandlerIsolatesTheDeviceOnlyOnceAcrossARedelivery` | An isolate-device action is abandoned once and redelivered (delivery count 2); a handler guarded by a processed-ids store applies it once and skips the redelivery, so the device is isolated once |
+| `NaiveHandlerIsolatesTheDeviceTwiceOnRedelivery` (control) | The same redelivery without the guard applies the action twice, so the device is isolated twice |
+
+### API: `EmulatorHealthApiTests` (`Api/`)
+
+Tests of the emulator's management API on port 5300. These use Playwright's `APIRequestContext` via `PlaywrightTest`, so no browser starts.
+
+| Test | What it pins |
+|---|---|
+| `HealthEndpointAnswersOk` | `/health` → 200, JSON status `"healthy"` |
+| `UnknownPathIsReadAsAnEntityLookupAndAnswersAnEmptyFeed` | unknown name → 200 with an empty Atom feed, not 404 |
+| `ExistingEntityAnswersASingleEntry` (×2, parameterised) | queue and topic → a single Atom entry with `QueueDescription` / `TopicDescription` |
+| `IncidentActionsQueueIsConfiguredAsTheIdempotencyTestsAssume` | the queue settings the idempotency tests rely on: duplicate detection (`PT2M`), `MaxDeliveryCount` 2 |
+
+## Emulator notes
+
+- The management API (port 5300) answers lookups for queues and topics with a single Atom entry, and for unknown names with an empty Atom feed (200, not 404).
+- Every topic-subscription route (`/{topic}/Subscriptions`, collection or single entity, with or without `api-version`) returns 500 Internal Server Error, so subscription configuration is verified indirectly by the routing tests.
 
 ## Mutation checks
 
@@ -106,7 +167,8 @@ These checks were done by hand; [Stryker.NET](https://stryker-mutator.io) would 
 
 ```
 playwright-asb-csharp/
-├── emulator/                   # Local Service Bus emulator (Docker Compose)
+├── docker/                     # Service Bus emulator used by the tests (Docker Compose + Config.json)
+├── emulator/                   # Alternative emulator setup with settings in .env; same Config.json as docker/
 ├── global.json                 # Pins the .NET SDK version
 └── PlaywrightAsb.Tests/        # NUnit test project
 ```

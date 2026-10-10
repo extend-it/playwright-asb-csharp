@@ -87,6 +87,21 @@ Get-ChildItem PlaywrightAsb.Tests\TestResults\TestResults-*.html | Sort-Object N
 
 The report is configured by the `VSTestLogger` property in `PlaywrightAsb.Tests\PlaywrightAsb.Tests.csproj`. Passing your own `--logger` to `dotnet test` replaces it.
 
+## Mutation checks
+
+Each test was verified to fail for the reason its name claims: the code it guards was deliberately broken, and the expected failure confirmed.
+
+| Test | Mutation | Expected failure |
+|---|---|---|
+| `AlertThatFailedValidationLandsInDlqWithReason` | Remove the `DeadLetterMessageAsync` call | DLQ empty: count 0, expected 1 |
+| `PoisonAlertAbandonedMaxDeliveryCountIsDeadLetteredByTheBroker` | Replace `AbandonMessageAsync` with `CompleteMessageAsync` | Delivery counts `[1]`, expected `[1, 2]` |
+| `BrokerDropsASecondSendWithTheSameMessageId` | Give the second send a different `MessageId` | Two actions received, expected one |
+| `IdempotentHandlerIsolatesTheDeviceOnlyOnceAcrossARedelivery` | Drop the `processed.Add` guard | Outcomes `["applied", "applied"]`, device isolated twice |
+
+The last two mutations are also kept as permanent **control tests** that run on every build: `BrokerAcceptsResendsWithADifferentMessageId` and `NaiveHandlerIsolatesTheDeviceTwiceOnRedelivery`. Each shows the condition under which the protection deliberately does not apply.
+
+These checks were done by hand; [Stryker.NET](https://stryker-mutator.io) would automate them.
+
 ## Project structure
 
 ```

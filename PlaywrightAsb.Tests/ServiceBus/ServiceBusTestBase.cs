@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Azure.Messaging.ServiceBus;
+using Microsoft.Azure.Amqp.Framing;
 
 namespace PlaywrightAsb.Tests.ServiceBus;
 
@@ -34,15 +35,8 @@ public abstract class ServiceBusTestBase
     }
 
     [OneTimeSetUp]
-    // public void CreateClient()
-    // {
-    //     var cs = Environment.GetEnvironmentVariable("SERVICEBUS_CONNECTION_STRING")
-    //              ?? throw new InvalidOperationException("SERVICEBUS_CONNECTION_STRING is not set");
-    //     Client = new ServiceBusClient(cs);
-    // }
     public async Task CreateClient()
-    {
-        
+    {      
         await EnsureEmulatorIsUpAsync();
         Client = new ServiceBusClient(Setting(
             "SERVICEBUS_CONNECTION_STRING",
@@ -103,6 +97,17 @@ public abstract class ServiceBusTestBase
     protected async Task DrainAsync(string subscription)
     {
         await using var receiver = Client.CreateReceiver(Topic, subscription);
+        await DrainReceiverAsync(receiver);
+    }
+
+    protected async Task DrainQueueAsync(string queue)
+    {
+        await using var receiver = Client.CreateReceiver(queue);
+        await DrainReceiverAsync(receiver);
+    }
+
+    private static async Task DrainReceiverAsync(ServiceBusReceiver receiver)
+    {
         var batch = await receiver.ReceiveMessagesAsync(50, TimeSpan.FromSeconds(1));
         while (batch.Count > 0)
         {

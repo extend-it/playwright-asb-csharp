@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using Azure.Messaging.ServiceBus;
-using Microsoft.Azure.Amqp.Framing;
 
 namespace PlaywrightAsb.Tests.ServiceBus;
 
@@ -36,7 +35,7 @@ public abstract class ServiceBusTestBase
 
     [OneTimeSetUp]
     public async Task CreateClient()
-    {      
+    {
         await EnsureEmulatorIsUpAsync();
         Client = new ServiceBusClient(Setting(
             "SERVICEBUS_CONNECTION_STRING",
@@ -64,7 +63,7 @@ public abstract class ServiceBusTestBase
             foreach (var message in batch)
             {
                 if (predicate(message)) found.Add(message);
-                await receiver.CompleteMessageAsync(message);
+                await CompleteQuietlyAsync(receiver, message);
             }
             if (found.Count > 0 && batch.Count == 0) break;
         }
@@ -86,7 +85,7 @@ public abstract class ServiceBusTestBase
                 if (mine is null && message.CorrelationId == correlationId)
                     mine = message;
                 else
-                    await receiver.CompleteMessageAsync(message);
+                    await CompleteQuietlyAsync(receiver, message);
             }
             if (mine is not null) return mine;
         }
@@ -111,8 +110,21 @@ public abstract class ServiceBusTestBase
         var batch = await receiver.ReceiveMessagesAsync(50, TimeSpan.FromSeconds(1));
         while (batch.Count > 0)
         {
-            foreach (var message in batch) await receiver.CompleteMessageAsync(message);
+            foreach (var message in batch) await CompleteQuietlyAsync(receiver, message);
             batch = await receiver.ReceiveMessagesAsync(50, TimeSpan.FromSeconds(1));
+        }
+    }
+
+    /// <summary>Settle a message we only observed. This is cleanup, not an assertion: a lost lock must not fail the test.</summary>
+    private static async Task CompleteQuietlyAsync(ServiceBusReceiver receiver, ServiceBusReceivedMessage message)
+    {
+        try
+        {
+            await receiver.CompleteMessageAsync(message);
+        }
+        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessageLockLost)
+        {
+            TestContext.Progress.WriteLine($"Lock already lost on {message.MessageId} during cleanup; ignored.");
         }
     }
 }

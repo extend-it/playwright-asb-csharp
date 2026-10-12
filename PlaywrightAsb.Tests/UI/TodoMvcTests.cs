@@ -3,7 +3,7 @@ using Microsoft.Playwright;
 
 namespace PlaywrightAsb.Tests.Ui;
 
-public class ToDoMvcTests : UiTestBase
+public class TodoMvcTests : UiTestBase
 {
     private ILocator NewTodo => Page.GetByPlaceholder("What needs to be done?");
     private ILocator Todos => Page.GetByTestId("todo-item");

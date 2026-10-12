@@ -1,7 +1,7 @@
 # playwright-asb-csharp
 [![tests](https://github.com/extend-it/playwright-asb-csharp/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/extend-it/playwright-asb-csharp/actions/workflows/tests.yml)
 
-Automated tests in C# using [Playwright for .NET](https://playwright.dev/dotnet/) and [Azure Service Bus](https://learn.microsoft.com/azure/service-bus-messaging/), built on NUnit.
+Tests for an event-driven security-alert flow on [Azure Service Bus](https://learn.microsoft.com/azure/service-bus-messaging/): topic routing, dead-lettering and idempotent handling, plus browser and API tests with [Playwright for .NET](https://playwright.dev/dotnet/). A C# and NUnit port of [playwright-asb](https://github.com/extend-it/playwright-asb), originally written in TypeScript.
 
 ## Tech stack
 
@@ -95,7 +95,7 @@ The report is configured by the `VSTestLogger` property in `PlaywrightAsb.Tests\
 
 ## Test overview
 
-### UI: `ToDoMvcTests` (`UI/TodoMvcTests.cs`)
+### UI: `TodoMvcTests` (`UI/TodoMvcTests.cs`)
 
 Playwright browser tests against the TodoMVC demo app (`https://demo.playwright.dev/todomvc/`, override with `UI_BASE_URL`). The fixture inherits from `UiTestBase`, which keeps a Playwright trace for each failed test.
 
@@ -163,6 +163,11 @@ Each test was verified to fail for the reason its name claims: the code it guard
 The last two mutations are also kept as permanent **control tests** that run on every build: `BrokerAcceptsResendsWithADifferentMessageId` and `NaiveHandlerIsolatesTheDeviceTwiceOnRedelivery`. Each shows the condition under which the protection deliberately does not apply.
 
 These checks were done by hand; [Stryker.NET](https://stryker-mutator.io) would automate them.
+
+## CI
+
+`.github/workflows/tests.yml` starts the emulator in Docker, installs Chromium, runs dotnet test, and uploads the HTML report and traces as artifacts.
+Setup commands in this README are Windows paths, while CI runs on Linux.
 
 ## Project structure
 

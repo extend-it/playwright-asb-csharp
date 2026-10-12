@@ -38,13 +38,12 @@ public class EmulatorHealthApiTests : PlaywrightTest
         await Expect(response).ToBeOKAsync();
         Assert.That(response.Headers["content-type"], Does.StartWith("application/atom+xml"));
 
-        XNamespace atom = "http://www.w3.org/2005/Atom";
         var feed = XDocument.Parse(await response.TextAsync()).Root!;
         Assert.Multiple(() =>
         {
-            Assert.That(feed.Name, Is.EqualTo(atom + "feed"));
-            Assert.That(feed.Element(atom + "title")?.Value, Is.EqualTo("Publicly Listed Services"));
-            Assert.That(feed.Elements(atom + "entry"), Is.Empty, "no entity of that name exists");
+            Assert.That(feed.Name, Is.EqualTo(Atom + "feed"));
+            Assert.That(feed.Element(Atom + "title")?.Value, Is.EqualTo("Publicly Listed Services"));
+            Assert.That(feed.Elements(Atom + "entry"), Is.Empty, "no entity of that name exists");
         });
     }
 

@@ -6,9 +6,7 @@ namespace PlaywrightAsb.Tests.ServiceBus;
 public abstract class ServiceBusTestBase
 {
     protected ServiceBusClient Client = null!;
-    // protected string Topic => Environment.GetEnvironmentVariable("SB_TOPIC") ?? "security-alerts";
     protected string Topic => Setting("SB_TOPIC", "security-alerts");
-    // protected string Queue => Environment.GetEnvironmentVariable("SB_QUEUE") ?? "incident-actions";
     protected string Queue => Setting("SB_QUEUE", "incident-actions");
 
     private static string Setting(string name, string fallback) =>
@@ -47,13 +45,15 @@ public abstract class ServiceBusTestBase
 
     protected static string NewCorrelationId() => $"test-{Guid.NewGuid()}";
 
-    /// <summary>Receive until the predicate has matched or the budget runs out. Everything received is completed.</summary>
+    /// <summary>Receive until the predicate has matched or the budget runs out. Returns each matching message once,
+    /// however many times it was delivered. Everything received is completed (best effort).</summary>
     protected static async Task<List<ServiceBusReceivedMessage>> ReceiveMatchingAsync(
         ServiceBusReceiver receiver,
         Func<ServiceBusReceivedMessage, bool> predicate,
         TimeSpan? budget = null)
     {
         var found = new List<ServiceBusReceivedMessage>();
+        var seen = new HashSet<long>();
         var limit = budget ?? TimeSpan.FromSeconds(10);
         var clock = Stopwatch.StartNew();
 
@@ -62,7 +62,14 @@ public abstract class ServiceBusTestBase
             var batch = await receiver.ReceiveMessagesAsync(10, TimeSpan.FromSeconds(1));
             foreach (var message in batch)
             {
-                if (predicate(message)) found.Add(message);
+                if (predicate(message))
+                {
+                    if (seen.Add(message.SequenceNumber))
+                        found.Add(message);
+                    else
+                        TestContext.Progress.WriteLine(
+                            $"Redelivery of sequence {message.SequenceNumber} ignored (delivery count {message.DeliveryCount}).");
+                }
                 await CompleteQuietlyAsync(receiver, message);
             }
             if (found.Count > 0 && batch.Count == 0) break;
@@ -118,6 +125,7 @@ public abstract class ServiceBusTestBase
     /// <summary>Settle a message we only observed. This is cleanup, not an assertion: a lost lock must not fail the test.</summary>
     private static async Task CompleteQuietlyAsync(ServiceBusReceiver receiver, ServiceBusReceivedMessage message)
     {
+        if (receiver.ReceiveMode == ServiceBusReceiveMode.ReceiveAndDelete) return;   // removed on receipt
         try
         {
             await receiver.CompleteMessageAsync(message);

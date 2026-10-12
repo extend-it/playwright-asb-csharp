@@ -7,10 +7,9 @@ namespace PlaywrightAsb.Tests.ServiceBus;
 public class DeadLetterTests : ServiceBusTestBase
 {
     private const string Audit = "alerts-audit";
-    
+
     [SetUp]
     public async Task DrainAudit() => await DrainAsync(Audit);
-
 
     [Test]
     public async Task AlertThatFailedValidationLandsInDlqWithReason()
@@ -39,8 +38,11 @@ public class DeadLetterTests : ServiceBusTestBase
                 deadLetterErrorDescription: "deviceId is required on a device alert");
         }
 
-        await using var dlq = Client.CreateReceiver(Topic, Audit,
-            new ServiceBusReceiverOptions { SubQueue = SubQueue.DeadLetter });
+        await using var dlq = Client.CreateReceiver(Topic, Audit, new ServiceBusReceiverOptions
+        {
+            SubQueue = SubQueue.DeadLetter,
+            ReceiveMode = ServiceBusReceiveMode.ReceiveAndDelete,
+        });
 
         var dead = await ReceiveMatchingAsync(dlq, m => m.CorrelationId == correlationId, TimeSpan.FromSeconds(15));
 
@@ -79,14 +81,16 @@ public class DeadLetterTests : ServiceBusTestBase
 
                 deliveryCounts.Add(mine.DeliveryCount);
                 await receiver.AbandonMessageAsync(mine);   // a consumer that keeps crashing
-                // await receiver.CompleteMessageAsync(mine);   // a consumer that succeeds, to test the right failure
             }
         }
 
         Assert.That(deliveryCounts, Is.EqualTo(new[] { 1, 2 }), "delivered twice, then the broker stopped");
 
-        await using var dlq = Client.CreateReceiver(Topic, Audit,
-            new ServiceBusReceiverOptions { SubQueue = SubQueue.DeadLetter });
+        await using var dlq = Client.CreateReceiver(Topic, Audit, new ServiceBusReceiverOptions
+        {
+            SubQueue = SubQueue.DeadLetter,
+            ReceiveMode = ServiceBusReceiveMode.ReceiveAndDelete,
+        });
 
         var dead = await ReceiveMatchingAsync(dlq, m => m.CorrelationId == correlationId, TimeSpan.FromSeconds(15));
 

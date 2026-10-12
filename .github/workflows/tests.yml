@@ -1,0 +1,53 @@
+name: tests
+
+on: 
+    push:
+        branches: [main]
+    pull_request:
+
+jobs:
+    test:
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+
+        steps:
+            - uses: actions/checkout@v4
+            
+            - uses: actions/setup-dotnet@v4
+              with:
+                global-json-file: global.json
+
+            - name: Start Service Bus emulator
+              run: docker compose -f docker/docker-compose.yaml up -d
+
+            - name: Build
+              run: dotnet build PlaywrightAsb.Tests
+            
+            - name: Install Playwright browsers
+              run: pwsh PlaywrightAsb.Tests/bin/Debug/net10.0/playwright.ps1 install --with-deps chromium
+            
+            - name: Wait for emulator
+              run: |
+                for i in {1..30}; do
+                    curl -sf http://localhost:5300/health && exit 0
+                    sleep 5
+                done
+                docker logs servicebus-emulator
+                exit 1
+
+            - name: Test
+              run: dotnet test PlaywrightAsb.Tests --no-build
+
+            - name: Upload test results and traces
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                name: test-results
+                path: |
+                  PlaywrightAsb.Tests/TestResults/
+                  PlaywrightAsb.Tests/**/traces/
+                if-no-files-found: ignore
+
+            - name: Emulator logs on failure
+              if: failure()
+              run: docker logs servicebus-emulator

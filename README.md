@@ -1,4 +1,5 @@
 # playwright-asb-csharp
+[![tests](https://github.com/extend-it/playwright-asb-csharp/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/extend-it/playwright-asb-csharp/actions/workflows/tests.yml)
 
 Automated tests in C# using [Playwright for .NET](https://playwright.dev/dotnet/) and [Azure Service Bus](https://learn.microsoft.com/azure/service-bus-messaging/), built on NUnit.
 
@@ -168,7 +169,6 @@ These checks were done by hand; [Stryker.NET](https://stryker-mutator.io) would 
 ```
 playwright-asb-csharp/
 ├── docker/                     # Service Bus emulator used by the tests (Docker Compose + Config.json)
-├── emulator/                   # Alternative emulator setup with settings in .env; same Config.json as docker/
 ├── global.json                 # Pins the .NET SDK version
 └── PlaywrightAsb.Tests/        # NUnit test project
 ```

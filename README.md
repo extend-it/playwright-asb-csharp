@@ -144,6 +144,19 @@ Tests of the emulator's management API on port 5300. These use Playwright's `API
 | `ExistingEntityAnswersASingleEntry` (×2, parameterised) | queue and topic → a single Atom entry with `QueueDescription` / `TopicDescription` |
 | `IncidentActionsQueueIsConfiguredAsTheIdempotencyTestsAssume` | the queue settings the idempotency tests rely on: duplicate detection (`PT2M`), `MaxDeliveryCount` 2 |
 
+## Design notes
+
+How the Service Bus tests stay reliable against a shared broker:
+
+- **Each test only sees its own messages.** Every test sends with a unique correlation ID (`test-{Guid}`) and asserts only on messages carrying it, so leftovers from earlier runs can't affect the result. `MessageId`s are unique per run too, because the queue remembers them for the 2-minute duplicate-detection window.
+- **No sleeps.** Receives run in loops bounded by a time budget and stop as soon as the expected messages have arrived. Asserting that something does *not* arrive uses a shorter budget (4 s instead of 10 s), so a passing negative check doesn't cost the full wait.
+- **Known starting state.** Fixtures that share entities are `[NonParallelizable]` and drain their subscription or queue in `[SetUp]`.
+- **Two receive contracts.** `ReceiveMatchingAsync` observes: it reads, settles everything, and returns the matches. `ReceiveOwnAsync` takes ownership: it returns the test's message still locked, so the test decides its fate (dead-letter or abandon).
+- **Each message counted once.** A lock that expires mid-test means the broker delivers the same message again. `ReceiveMatchingAsync` therefore de-duplicates by `SequenceNumber`, which stays the same across redeliveries, and logs any redelivery it skips. Settling a message the test only observed is cleanup, not an assertion, so a lost lock there is logged instead of failing the test.
+- **The dead-letter queue is read with `ReceiveAndDelete`.** A reader that only inspects messages has no reason to hold locks, and with no locks there are no expiring locks and no redeliveries.
+
+The last two came out of a CI-only failure: on the slower runner, the 5-second lock on `alerts-audit` expired while dead-lettered messages were being read, and the same message was counted twice.
+
 ## Emulator notes
 
 - The management API (port 5300) answers lookups for queues and topics with a single Atom entry, and for unknown names with an empty Atom feed (200, not 404).
